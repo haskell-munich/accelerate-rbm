@@ -1,11 +1,11 @@
 module Main where
 
-import Prelude hiding (replicate, zipWith, map, unzip)
+import Prelude hiding (replicate, zipWith, map, unzip, (<*))
 import Data.Array.Accelerate
   (fill, constant, Acc, Z(..), (:.)(..),
    Array, Exp, DIM1, DIM2, use, lift, replicate, All(..), zipWith,
    transpose, fold, fromList, map, unzip,
-   Int64, Int32, lift)
+   Int64, Int32, lift, (<*))
 
 import System.Random(getStdRandom, randomR)
 import Control.Monad(replicateM)
@@ -47,10 +47,19 @@ sigmoid :: Exp Float -> Exp Float
 sigmoid act =
   1 / (1 + exp (-act))
 
+hsample :: Acc PRNG -> Acc HProbs -> (Acc PRNG, Acc HState)
+hsample prng1 hprobs =
+  let (prng2, rs) = randoms prng1
+  in (prng2,
+      zipWith (<*)
+        (map (floor . (*1024)) hprobs)
+        rs)
+
 -- propup -- p(h|v)
-propup :: RBM -> VState -> PRNG -> Acc HState
-propup rbm vis prng =
-  map sigmoid $ hact rbm vis
+propup :: Acc PRNG -> RBM -> VState -> (Acc PRNG, Acc HState)
+propup prng rbm vis =
+  do let hprops = map sigmoid $ hact rbm vis
+     hsample prng hprops
 
   
 -- sampleH -- sample from p(h|v)
@@ -91,22 +100,23 @@ testRandoms =
               f (I.run r1) (pred num)
      r0 <- mkPRNG n
      print("r0", r0)
-     f r0 1000
-           
+     f r0 10
   
   
 testRBM =
-  let (nv, nh) = (3, 4)
-      rbm = initialWeights nv nh
-      v1 = fromList (Z :. nv) [0,1,1] :: VState
-      h1act = I.run $ hact rbm v1
-      -- h1s = I.run $ propup rbm v1
-  in
-   print h1act
-   --print h1s
+  do let (nv, nh) = (3, 4)
+     rv <- mkPRNG nv
+     rh1 <- mkPRNG nh
+     let rbm = initialWeights nv nh
+         v1 = fromList (Z :. nv) [0,1,1] :: VState
+         h1act = I.run $ hact rbm v1
+         (rh2', h1s') = propup (use rh1) rbm v1
+         (rh2, h1s) = (I.run rh2', h1s')
+     print h1act
+     print h1s
 
 
 
 main =
-  -- testRBM
-  testRandoms
+  -- testRandoms
+  testRBM

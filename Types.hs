@@ -31,5 +31,8 @@ type VState = Array DIM1 Float
 -- the activations of the hidden units
 type HAct = Array DIM1 Float
 
+-- the probabilities of the hidden units
+type HProbs = Array DIM1 Float
+
 -- the states of the hidden units -- should be bool
-type HState = Array DIM1 Float
+type HState = Array DIM1 Bool
