@@ -1,8 +1,12 @@
-import Prelude hiding (replicate, zipWith)
+import Prelude hiding (replicate, zipWith, map, unzip)
 import Data.Array.Accelerate
   (fill, constant, Acc, Z(..), (:.)(..),
-   Array, DIM1, DIM2, use, lift, replicate, All(..), zipWith,
-   transpose, fold)
+   Array, Exp, DIM1, DIM2, use, lift, replicate, All(..), zipWith,
+   transpose, fold, fromList, map, unzip,
+   Int64, lift)
+
+import Data.Bits(Bits((.&.)))
+   
 import Data.Array.Accelerate.Interpreter as I
 
 -- the weight matrix
@@ -41,7 +45,6 @@ initialWeights nv nh =
       h = I.run $ fill (constant $ Z :. nh) 0.0 :: H
   in RBM nv nh w v h
 
--- sigmoid
 
 -- calculate the activations of the hiddens units given states of the
 -- visible units. All columns of the matrix that correspond to an
@@ -61,12 +64,41 @@ hact (RBM nv nh w v h) vis =
     repv = (replicate (lift $ Z :. All :. nh) (use vis))
 
 
+sigmoid :: Exp Float -> Exp Float
+sigmoid act =
+  1 / (1 + exp (-act))
+
 -- propup -- p(h|v)
+propup :: RBM -> VState -> Acc HState
+propup rbm vis =
+  map sigmoid $ hact rbm vis
+
   
 -- sampleH -- sample from p(h|v)
 -- propdown -- p(v|h)
 -- sampleV -- sample from p(v|h)
 -- cd1
 
+
+type PRNG = Array DIM1 Int64
+type Randoms = Array DIM1 Float
+
+-- Generate numbers from 0.0 to 1.0 and also a new state
+-- that can be used to generate more random numbers.
+randoms :: Acc PRNG -> (Acc PRNG, Acc Randoms)
+randoms state = (map next state,
+                 map gen state)
+  where next :: Exp Int64 -> Exp Int64
+        next x = x + (x `div` 2) + (x `div` 128)
+        gen :: Exp Int64 -> Exp Float
+        gen x = fromIntegral (x .&. 1023) / 1023.0
+
 main =
-  print $ initialWeights 3 4
+  let (nv, nh) = (3, 4)
+      rbm = initialWeights nv nh
+      v1 = fromList (Z :. nv) [0,1,1] :: VState
+      h1act = I.run $ hact rbm v1
+--      h1s = 
+  in
+   print h1act
+
