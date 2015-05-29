@@ -1,0 +1,4 @@
+
+
+see 'getSigmoidFunction'
+  in accelerate-examples/examples/smoothlife/SmoothLife.hs
