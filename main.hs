@@ -1,7 +1,8 @@
 import Prelude hiding (replicate, zipWith)
 import Data.Array.Accelerate
   (fill, constant, Acc, Z(..), (:.)(..),
-   Array, DIM1, DIM2, use, lift, replicate, All(..), zipWith)
+   Array, DIM1, DIM2, use, lift, replicate, All(..), zipWith,
+   transpose, fold)
 import Data.Array.Accelerate.Interpreter as I
 
 -- the weight matrix
@@ -50,16 +51,17 @@ hact (RBM nv nh w v h) vis =
   zipWith (+)
      (use h)
      (fold (+)
-       ??? -- sum up all rows corresponding to activated visibles...
-       (zipWith (*)
-         (repv :: Acc W)
-         ((use w) :: Acc W))
+       0
+       (transpose
+         (zipWith (*)
+           (repv :: Acc W)
+           ((use w) :: Acc W))))
   where
     repv :: Acc (Array DIM2 Float)
     repv = (replicate (lift $ Z :. All :. nh) (use vis))
 
+
 -- propup -- p(h|v)
--- hact :: RBM -> 
   
 -- sampleH -- sample from p(h|v)
 -- propdown -- p(v|h)
