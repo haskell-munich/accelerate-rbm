@@ -49,9 +49,14 @@ hact :: RBM -> VState -> Acc HAct
 hact (RBM nv nh w v h) vis =
   zipWith (+)
      (use h)
-     (zipWith (*)
-       (replicate (lift $ Z :. All :. nv) vis)
-       w)
+     (fold (+)
+       ??? -- sum up all rows corresponding to activated visibles...
+       (zipWith (*)
+         (repv :: Acc W)
+         ((use w) :: Acc W))
+  where
+    repv :: Acc (Array DIM2 Float)
+    repv = (replicate (lift $ Z :. All :. nh) (use vis))
 
 -- propup -- p(h|v)
 -- hact :: RBM -> 
