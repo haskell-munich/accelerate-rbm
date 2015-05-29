@@ -47,11 +47,18 @@ sigmoid :: Exp Float -> Exp Float
 sigmoid act =
   1 / (1 + exp (-act))
 
+
+-- sample the state of the hiddens.
+-- the random generator produces numbers 0..1023
+-- the probabilities are scaled up, and compared as ints
+-- to find out if a hidden should be on or off.
+-- Sadly there is a problem with this code:
+-- a: Prelude.Ord.< applied to EDSL types: use (<*) instead
 hsample :: Acc PRNG -> Acc HProbs -> (Acc PRNG, Acc HState)
 hsample prng1 hprobs =
   let (prng2, rs) = randoms prng1
   in (prng2,
-      zipWith (<*)
+      zipWith ((<*) :: Exp IntR -> Exp IntR -> Exp Bool)
         (map (floor . (*1024)) hprobs)
         rs)
 
