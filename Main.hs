@@ -1,4 +1,3 @@
-
 module Main where
 
 import Prelude hiding (replicate, zipWith, map, unzip)
@@ -6,7 +5,7 @@ import Data.Array.Accelerate
   (fill, constant, Acc, Z(..), (:.)(..),
    Array, Exp, DIM1, DIM2, use, lift, replicate, All(..), zipWith,
    transpose, fold, fromList, map, unzip,
-   Int64, lift)
+   Int64, Int32, lift)
 
 import Data.Bits(Bits((.&.)))
    
@@ -57,25 +56,48 @@ propup rbm vis =
 -- cd1
 
 
-type PRNG = Array DIM1 Int64
-type Randoms = Array DIM1 Float
+type IntR = Int64
+type PRNG = Array DIM1 IntR
+type Randoms = Array DIM1 IntR
 
--- Generate numbers from 0.0 to 1.0 and also a new state
+-- Generate numbers from 0 to 1023 and also a new state
 -- that can be used to generate more random numbers.
 randoms :: Acc PRNG -> (Acc PRNG, Acc Randoms)
 randoms state = (map next state,
                  map gen state)
-  where next :: Exp Int64 -> Exp Int64
+  where next :: Exp IntR -> Exp IntR
         next x = x + (x `div` 2) + (x `div` 128)
-        gen :: Exp Int64 -> Exp Float
-        gen x = fromIntegral (x .&. 1023) / 1023.0
+        gen :: Exp IntR -> Exp IntR
+        gen x = (x .&. 1023) --  1023.0
 
-main =
+
+testRandoms :: IO ()
+testRandoms =
+  do let n = 3
+         r0 = fromList (Z :. n) [123678, 123789, 234890]
+              :: Array DIM1 IntR
+         (r1, as) = randoms (use r0)
+         (r2, bs) = randoms r1
+         (r3, cs) = randoms r2
+         (r4, ds) = randoms r3
+         (r5, es) = randoms r4
+     print (I.run as)
+     print (I.run bs)
+     print (I.run cs)
+     print (I.run ds)
+     print (I.run es)
+  
+  
+testRBM =
   let (nv, nh) = (3, 4)
       rbm = initialWeights nv nh
       v1 = fromList (Z :. nv) [0,1,1] :: VState
       h1act = I.run $ hact rbm v1
---      h1s = 
   in
    print h1act
 
+
+
+main =
+  -- testRBM
+  testRandoms
