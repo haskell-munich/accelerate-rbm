@@ -1,6 +1,7 @@
+import Prelude hiding (replicate, zipWith)
 import Data.Array.Accelerate
   (fill, constant, Acc, Z(..), (:.)(..),
-   Array, DIM1, DIM2, use)
+   Array, DIM1, DIM2, use, lift, replicate, All(..), zipWith)
 import Data.Array.Accelerate.Interpreter as I
 
 -- the weight matrix
@@ -12,7 +13,9 @@ type V = Array DIM1 Float
 -- the biases for the hidden units
 type H = Array DIM1 Float
 
-data RBM = RBM { weights :: W
+data RBM = RBM { nv :: Int -- number of visibles units
+               , nh :: Int -- number of hidden units
+               , weights :: W
                , vbias :: V
                , hbias :: H }
            deriving (Show)
@@ -20,8 +23,14 @@ data RBM = RBM { weights :: W
 -- the activations of the visible units
 type VAct = Array DIM1 Float
 
--- the states of the visible units
-type VState = Array DIM1 Bool
+-- the states of the visible units -- should be bool
+type VState = Array DIM1 Float
+
+-- the activations of the hidden units
+type HAct = Array DIM1 Float
+
+-- the states of the hidden units -- should be bool
+type HState = Array DIM1 Float
 
 
 initialWeights :: Int -> Int -> RBM
@@ -29,13 +38,20 @@ initialWeights nv nh =
   let w = I.run $ fill (constant $ Z :. nv :. nh) 0.0 :: W
       v = I.run $ fill (constant $ Z :. nv) 0.0 :: V
       h = I.run $ fill (constant $ Z :. nh) 0.0 :: H
-  in RBM w v h
+  in RBM nv nh w v h
 
 -- sigmoid
 
-hact :: RBM -> VState -> Acc VAct
-hact (RBM w v h) vis =
-  use v
+-- calculate the activations of the hiddens units given states of the
+-- visible units. All columns of the matrix that correspond to an
+-- activated visible are summed up.
+hact :: RBM -> VState -> Acc HAct
+hact (RBM nv nh w v h) vis =
+  zipWith (+)
+     (use h)
+     (zipWith (*)
+       (replicate (lift $ Z :. All :. nv) vis)
+       w)
 
 -- propup -- p(h|v)
 -- hact :: RBM -> 
