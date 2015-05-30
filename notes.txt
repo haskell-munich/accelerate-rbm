@@ -2,3 +2,7 @@
 
 see 'getSigmoidFunction'
   in accelerate-examples/examples/smoothlife/SmoothLife.hs
+
+nikola looks like an interesting project too
+  https://github.com/mainland/nikola
+  https://www.cs.drexel.edu/~mainland/publications/mainland10nikola.pdf
