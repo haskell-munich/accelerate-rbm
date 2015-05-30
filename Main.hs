@@ -136,17 +136,36 @@ cd1 learningRate rn rbm vis1 =
       mulBP :: Exp Bool -> Exp Float -> Exp Float
       mulBP a b = a ? (b, 0.0)
 
+      updatedVbias =
+        A.zipWith (+) (use $ vbias rbm)
+          (A.map mulLearningRate
+             (A.zipWith diffbb (use vis1) vis2))
+
+      diffbb :: Exp Bool -> Exp Bool -> Exp Float
+      diffbb a b = A.fromIntegral (boolToInt a - boolToInt b)
+
+      updatedHbias =
+        A.zipWith (+) (use $ hbias rbm)
+          (A.map mulLearningRate
+             (A.zipWith diffbf hid1 hid2p))
+
+      diffbf :: Exp Bool -> Exp Float -> Exp Float
+      diffbf a b = A.fromIntegral (boolToInt a) - b
+
+      mulLearningRate :: Exp Float -> Exp Float
+      mulLearningRate d = d * constant learningRate
+
+
       -- the reconstruction error
       recerr = A.fold (+) 0 (A.zipWith bindiff (use vis1) vis2)
 
       bindiff :: Exp Bool -> Exp Bool -> Exp Float
       bindiff a b = a /=* b ? (1, 0)
       
-      
   in (CD1PRNGS (I.run rnv1) (I.run rnh1),
       rbm { weights = I.run updatedWeights
-            {-vbias = undefined,-}
-            {-hbias = undefined-} },
+          , vbias = I.run updatedVbias
+          , hbias = I.run updatedHbias },
       I.run recerr)
      
 
