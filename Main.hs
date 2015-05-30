@@ -1,12 +1,13 @@
 module Main where
 
-import Prelude hiding (replicate, zipWith, map, unzip, (<*), floor,
-                       fromIntegral)
-import Data.Array.Accelerate
-  (fill, constant, Acc, Z(..), (:.)(..),
+import Prelude as P
+  {-hiding (replicate, zipWith, map, unzip, (<*), floor,
+                       fromIntegral)-}
+import Data.Array.Accelerate as A
+  {-(fill, constant, Acc, Z(..), (:.)(..),
    Array, Exp, DIM1, DIM2, use, lift, replicate, All(..), zipWith,
    transpose, fold, fromList, map, unzip,
-   Int64, Int32, lift, (<*), floor, fromIntegral)
+   Int64, Int32, lift, (<*), floor, fromIntegral)-}
 
 import System.Random(getStdRandom, randomR)
 import Control.Monad(replicateM)
@@ -31,17 +32,17 @@ initialWeights nv nh =
 -- activated visible are summed up.
 hact :: RBM -> VState -> Acc HAct
 hact (RBM nv nh w v h) vis =
-  zipWith (+)
+  A.zipWith (+)
      (use h)
      (fold (+)
        0
        (transpose
-         (zipWith (*)
+         (A.zipWith (*)
            (repv :: Acc W)
            ((use w) :: Acc W))))
   where
     repv :: Acc (Array DIM2 Float)
-    repv = (replicate (lift $ Z :. All :. nh) (use vis))
+    repv = (A.replicate (lift $ Z :. All :. nh) (use vis))
 
 
 sigmoid :: Exp Float -> Exp Float
@@ -59,12 +60,12 @@ hsample :: Acc PRNG -> Acc HProbs -> (Acc PRNG, Acc HState)
 hsample prng1 hprobs =
   let (prng2, rs) = randoms prng1
   in (prng2,
-      zipWith (<*) rs hprobs)
+      A.zipWith (A.<*) rs hprobs)
 
 -- propup -- p(h|v)
 propup :: Acc PRNG -> RBM -> VState -> (Acc PRNG, Acc HState)
 propup prng rbm vis =
-  let hprops = map sigmoid $ hact rbm vis
+  let hprops = A.map sigmoid $ hact rbm vis
   in hsample prng hprops
 
   
@@ -88,12 +89,12 @@ mkPRNG size =
 -- Generate numbers from 0.0 to 1.0 and also a new state
 -- that can be used to generate more random numbers.
 randoms :: Acc PRNG -> (Acc PRNG, Acc Randoms)
-randoms state = (map next state,
-                 map gen state)
+randoms state = (A.map next state,
+                 A.map gen state)
   where next :: Exp IntR -> Exp IntR
         next x = x + (x `div` 2) + (x `div` 128)
         gen :: Exp IntR -> Exp Float
-        gen x = fromIntegral (x .&. 4095) / 4096.0
+        gen x = A.fromIntegral (x .&. 4095) / 4096.0
 
 
 testRandoms :: IO ()
