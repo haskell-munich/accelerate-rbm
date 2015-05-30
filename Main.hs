@@ -34,11 +34,15 @@ hsample prng1 hprobs =
   in (prng2,
       A.zipWith (A.<*) rs hprobs)
 
--- propup -- p(h|v)
+-- propup -- p(h|v), sampled
 propup :: Acc PRNG -> RBM -> Acc VState -> (Acc PRNG, Acc HState)
 propup prng rbm vis =
-  let hprops = A.map sigmoid $ hact rbm vis
-  in hsample prng hprops
+  hsample prng $ propupP rbm vis
+
+-- propup -- p(h|v), the probabilities
+propupP :: RBM -> Acc VState -> Acc HProbs
+propupP rbm vis =
+  A.map sigmoid $ hact rbm vis
 
 
 
@@ -83,7 +87,56 @@ propdown prng rbm hid =
   in vsample prng vprops
 
 
+data CD1PRNGS =
+  CD1PRNGS { vprng :: PRNG,
+             hprng :: PRNG }
 
+mkCD1PRNGS rbm =
+  do let (numv, numh) = (nv rbm, nh rbm)
+     rv <- mkPRNG numv
+     rh <- mkPRNG numh
+     return $ CD1PRNGS rv rh
+
+cd1 :: Float -> CD1PRNGS -> RBM -> VState -> (CD1PRNGS, RBM)
+cd1 learningRate rn rbm vis1 =
+  let (rnh1, hid1) = propup (use $ hprng rn) rbm (use vis1)
+      (rnv1, vis2) = propdown (use $ vprng rn) rbm hid1
+      hid2p = propupP rbm vis2
+      (numv, numh) = (nv rbm, nh rbm)
+
+      upd :: Exp Float -> Exp Float -> Exp Float
+      upd w d = w + constant learningRate * d
+      
+      updatedWeights =
+        A.zipWith upd (use $ weights rbm)
+          (A.zipWith (-)
+              (d_data (use vis1) hid1)
+              (d_recon vis2 hid2p))
+
+      -- find visibles and hiddens that are both active
+      d_data :: Acc VState -> Acc HState -> Acc W
+      d_data v h =
+        A.zipWith mulBB
+          (A.replicate (lift $ Z :. All :. numh) v)
+          (A.replicate (lift $ Z :. numv :. All) h)
+      mulBB :: Exp Bool -> Exp Bool -> Exp Float
+      mulBB a b = a&&*b ? (1.0, 0.0)
+
+      -- find visibles and hiddens that are both active
+      d_recon :: Acc VState -> Acc HProbs -> Acc W
+      d_recon v h =
+        A.zipWith mulBP
+          (A.replicate (lift $ Z :. All :. numh) v)
+          (A.replicate (lift $ Z :. numv :. All) h)
+
+      mulBP :: Exp Bool -> Exp Float -> Exp Float
+      mulBP a b = a ? (b, 0.0)
+      
+      
+  in (CD1PRNGS (I.run rnv1) (I.run rnh1),
+      rbm { weights = I.run updatedWeights
+            {-vbias = undefined,-}
+            {-hbias = undefined-} })
 
   
 
@@ -137,8 +190,17 @@ testRBM =
      print h1s
      print v2s
 
-
+testCD1 =
+  do let (nv, nh) = (5,7)
+     let rbm1 = initialWeights nv nh
+     rn1 <- mkCD1PRNGS rbm1
+     let v1 = fromList (Z :. nv)
+              [False, True, False, True, True] :: VState
+     let (rn2, rbm2) = cd1 0.01 rn1 rbm1 v1
+     print (rbm1)
+     print (rbm2)
 
 main =
-  do testRandoms
-     testRBM
+  do -- testRandoms
+     -- testRBM
+     testCD1
