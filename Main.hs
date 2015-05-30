@@ -27,24 +27,6 @@ sigmoid act =
   1 / (1 + exp (-act))
 
 
--- calculate the activations of the hiddens units given states of the
--- visible units. All rows of the matrix that correspond to an
--- activated visible are summed up.
-hact :: RBM -> Acc VState -> Acc HAct
-hact (RBM nv nh w v h) vis =
-  A.zipWith (+)
-     (use h)
-     (fold (+) 0
-       (transpose
-         (A.zipWith rif
-           repv
-           (use w))))
-  where
-    repv :: Acc (Array DIM2 Bool)
-    repv = (A.replicate (lift $ Z :. All :. nh) vis)
-    rif :: Exp Bool -> Exp Float -> Exp Float
-    rif v w = v ? (w, 0.0)
-
 -- sample the state of the hiddens.
 hsample :: Acc PRNG -> Acc HProbs -> (Acc PRNG, Acc HState)
 hsample prng1 hprobs =
@@ -64,19 +46,25 @@ propup prng rbm vis =
 -- hidden units. All columns of the matrix that correspond to an
 -- activated hidden are summed up.
 vact :: RBM -> Acc HState -> Acc VAct
-vact (RBM nv nh w v h) = act nv nh (transpose $ use w) (use v) (use h) 
+vact (RBM nv _ w v _) = act nv (transpose $ use w) (use v)
 
-act :: Int -> Int -> Acc W -> Acc V -> Acc H -> Acc State -> Acc Act
-act nv nh w v h hid =
+-- calculate the activations of the hiddens units given states of the
+-- visible units. All rows of the matrix that correspond to an
+-- activated visible are summed up.
+hact :: RBM -> Acc VState -> Acc HAct
+hact (RBM _ nh w _ h) = act nh (use w) (use h) 
+
+act :: Int -> Acc W -> Acc Bias -> Acc State -> Acc Act
+act nout w bias inputs =
      A.zipWith (+)
-     v 
+    bias
      (fold (+) 0
        (A.zipWith rif
           reph
           w))
   where
     reph :: Acc (Array DIM2 Bool)
-    reph = (A.replicate (lift $ Z :. nv :. All) hid)
+    reph = (A.replicate (lift $ Z :. nout :. All) inputs)
     rif :: Exp Bool -> Exp Float -> Exp Float
     rif v w = v ? (w, 0.0)
 

@@ -6,11 +6,12 @@ import Data.Array.Accelerate(Array, DIM1, DIM2)
 -- the weight matrix
 type W = Array DIM2 Float
 
+type Bias = Array DIM1 Float
 -- the biases for the visible units
-type V = Array DIM1 Float
+type V = Bias
 
 -- the biases for the hidden units
-type H = Array DIM1 Float
+type H = Bias
 
 data RBM = RBM { nv :: Int -- number of visibles units
                , nh :: Int -- number of hidden units
