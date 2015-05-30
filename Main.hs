@@ -1,11 +1,12 @@
 module Main where
 
-import Prelude hiding (replicate, zipWith, map, unzip, (<*), floor)
+import Prelude hiding (replicate, zipWith, map, unzip, (<*), floor,
+                       fromIntegral)
 import Data.Array.Accelerate
   (fill, constant, Acc, Z(..), (:.)(..),
    Array, Exp, DIM1, DIM2, use, lift, replicate, All(..), zipWith,
    transpose, fold, fromList, map, unzip,
-   Int64, Int32, lift, (<*), floor)
+   Int64, Int32, lift, (<*), floor, fromIntegral)
 
 import System.Random(getStdRandom, randomR)
 import Control.Monad(replicateM)
@@ -58,9 +59,7 @@ hsample :: Acc PRNG -> Acc HProbs -> (Acc PRNG, Acc HState)
 hsample prng1 hprobs =
   let (prng2, rs) = randoms prng1
   in (prng2,
-      zipWith (<*) -- :: Exp IntR -> Exp IntR -> Exp Bool
-        (rs :: Acc (Array DIM1 IntR))
-        (map (floor . (*1024)) hprobs :: Acc (Array DIM1 IntR)))
+      zipWith (<*) rs hprobs)
 
 -- propup -- p(h|v)
 propup :: Acc PRNG -> RBM -> VState -> (Acc PRNG, Acc HState)
@@ -77,7 +76,7 @@ propup prng rbm vis =
 
 type IntR = Int64
 type PRNG = Array DIM1 IntR
-type Randoms = Array DIM1 IntR
+type Randoms = Array DIM1 Float
 
 
 mkPRNG :: Int -> IO PRNG
@@ -86,15 +85,15 @@ mkPRNG size =
      rs <- replicateM size (getStdRandom (randomR (20000, mx)))
      return $ fromList (Z :. size) rs
   
--- Generate numbers from 0 to 1023 and also a new state
+-- Generate numbers from 0.0 to 1.0 and also a new state
 -- that can be used to generate more random numbers.
 randoms :: Acc PRNG -> (Acc PRNG, Acc Randoms)
 randoms state = (map next state,
                  map gen state)
   where next :: Exp IntR -> Exp IntR
         next x = x + (x `div` 2) + (x `div` 128)
-        gen :: Exp IntR -> Exp IntR
-        gen x = (x .&. 1023) --  1023.0
+        gen :: Exp IntR -> Exp Float
+        gen x = fromIntegral (x .&. 4095) / 4096.0
 
 
 testRandoms :: IO ()
@@ -125,5 +124,5 @@ testRBM =
 
 
 main =
-  -- testRandoms
-  testRBM
+  do testRandoms
+     testRBM
