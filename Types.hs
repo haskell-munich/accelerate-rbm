@@ -1,10 +1,7 @@
 
 module Types where
 
-import Data.Array.Accelerate
-  (fill, constant, Acc, Z(..), (:.)(..),
-   Array, DIM1, DIM2, use, lift, replicate, All(..), zipWith,
-   transpose, fold)
+import Data.Array.Accelerate(Array, DIM1, DIM2)
 
 -- the weight matrix
 type W = Array DIM2 Float
@@ -25,8 +22,9 @@ data RBM = RBM { nv :: Int -- number of visibles units
 -- the activations of the visible units
 type VAct = Array DIM1 Float
 
--- the states of the visible units -- should be bool
-type VState = Array DIM1 Float
+-- the states of the visible units
+type VState = Array DIM1 Bool
+
 
 -- the activations of the hidden units
 type HAct = Array DIM1 Float
@@ -34,5 +32,5 @@ type HAct = Array DIM1 Float
 -- the probabilities of the hidden units
 type HProbs = Array DIM1 Float
 
--- the states of the hidden units -- should be bool
+-- the states of the hidden units
 type HState = Array DIM1 Bool

@@ -37,12 +37,14 @@ hact (RBM nv nh w v h) vis =
      (fold (+)
        0
        (transpose
-         (A.zipWith (*)
-           (repv :: Acc W)
-           ((use w) :: Acc W))))
+         (A.zipWith rif
+           repv
+           (use w))))
   where
-    repv :: Acc (Array DIM2 Float)
+    repv :: Acc (Array DIM2 Bool)
     repv = (A.replicate (lift $ Z :. All :. nh) (use vis))
+    rif :: Exp Bool -> Exp Float -> Exp Float
+    rif v w = v ? (w, 0.0)
 
 
 sigmoid :: Exp Float -> Exp Float
@@ -115,7 +117,7 @@ testRBM =
      rv <- mkPRNG nv
      rh1 <- mkPRNG nh
      let rbm = initialWeights nv nh
-         v1 = fromList (Z :. nv) [0,1,1] :: VState
+         v1 = fromList (Z :. nv) [False, True, True] :: VState
          h1act = I.run $ hact rbm v1
          (rh2', h1s') = propup (use rh1) rbm v1
          (rh2, h1s) = (I.run rh2', I.run h1s')
