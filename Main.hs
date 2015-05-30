@@ -28,7 +28,7 @@ initialWeights nv nh =
 
 
 -- calculate the activations of the hiddens units given states of the
--- visible units. All columns of the matrix that correspond to an
+-- visible units. All rows of the matrix that correspond to an
 -- activated visible are summed up.
 hact :: RBM -> VState -> Acc HAct
 hact (RBM nv nh w v h) vis =
@@ -53,11 +53,6 @@ sigmoid act =
 
 
 -- sample the state of the hiddens.
--- the random generator produces numbers 0..1023
--- the probabilities are scaled up, and compared as ints
--- to find out if a hidden should be on or off.
--- Sadly there is a problem with this code:
--- a: Prelude.Ord.< applied to EDSL types: use (<*) instead
 hsample :: Acc PRNG -> Acc HProbs -> (Acc PRNG, Acc HState)
 hsample prng1 hprobs =
   let (prng2, rs) = randoms prng1
@@ -71,9 +66,10 @@ propup prng rbm vis =
   in hsample prng hprops
 
   
--- sampleH -- sample from p(h|v)
 -- propdown -- p(v|h)
 -- sampleV -- sample from p(v|h)
+
+
 -- cd1
 
 
