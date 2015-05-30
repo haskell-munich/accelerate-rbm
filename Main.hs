@@ -1,13 +1,7 @@
 module Main where
 
 import Prelude as P
-  {-hiding (replicate, zipWith, map, unzip, (<*), floor,
-                       fromIntegral)-}
 import Data.Array.Accelerate as A
-  {-(fill, constant, Acc, Z(..), (:.)(..),
-   Array, Exp, DIM1, DIM2, use, lift, replicate, All(..), zipWith,
-   transpose, fold, fromList, map, unzip,
-   Int64, Int32, lift, (<*), floor, fromIntegral)-}
 
 import System.Random(getStdRandom, randomR)
 import Control.Monad(replicateM)
