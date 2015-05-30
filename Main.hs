@@ -2,16 +2,12 @@ module Main where
 
 import Prelude as P
 import Data.Array.Accelerate as A
-
 import System.Random(getStdRandom, randomR)
 import Control.Monad(replicateM)
-
 import Data.Bits(Bits((.&.)), xor)
-   
 import Data.Array.Accelerate.Interpreter as I
-
+import qualified Data.Map as M
 import Types
-
 import Odyssey
 
 
@@ -247,7 +243,22 @@ testRandoms =
      print("r0", r0)
      f r0 10
   
+
+countRandoms :: IO ()
+countRandoms =
+  do let n = 1
+     let f _r 0 numbers = return numbers
+         f r0 num numbers =
+           do let (r1, as) = randoms $ use r0
+                  r = indexArray (I.run as) (Z :. 0)
+              f (I.run r1) (pred num) (r : numbers)
+     r0 <- mkPRNG n
+     numbers <- f r0 60000 []
+     mapM_ print $ M.toList $ M.fromListWith (+)
+       [ (P.floor (x*200), 1::Int)
+       | x <- numbers]
   
+
 testRBM =
   do let (nv, nh) = (3, 4)
      rv1 <- mkPRNG nv
@@ -321,7 +332,8 @@ reportHiddens ngram chars rbm =
 
 
 main =
-  do testRandoms
+  do -- testRandoms
+     countRandoms
      -- testRBM
      -- testCD1
      -- testOdysseyLetters
