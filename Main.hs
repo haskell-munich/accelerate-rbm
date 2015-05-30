@@ -1,11 +1,11 @@
 module Main where
 
-import Prelude hiding (replicate, zipWith, map, unzip, (<*))
+import Prelude hiding (replicate, zipWith, map, unzip, (<*), floor)
 import Data.Array.Accelerate
   (fill, constant, Acc, Z(..), (:.)(..),
    Array, Exp, DIM1, DIM2, use, lift, replicate, All(..), zipWith,
    transpose, fold, fromList, map, unzip,
-   Int64, Int32, lift, (<*))
+   Int64, Int32, lift, (<*), floor)
 
 import System.Random(getStdRandom, randomR)
 import Control.Monad(replicateM)
@@ -58,15 +58,15 @@ hsample :: Acc PRNG -> Acc HProbs -> (Acc PRNG, Acc HState)
 hsample prng1 hprobs =
   let (prng2, rs) = randoms prng1
   in (prng2,
-      zipWith ((<*) :: Exp IntR -> Exp IntR -> Exp Bool)
-        (map (floor . (*1024)) hprobs)
-        rs)
+      zipWith (<*) -- :: Exp IntR -> Exp IntR -> Exp Bool
+        (rs :: Acc (Array DIM1 IntR))
+        (map (floor . (*1024)) hprobs :: Acc (Array DIM1 IntR)))
 
 -- propup -- p(h|v)
 propup :: Acc PRNG -> RBM -> VState -> (Acc PRNG, Acc HState)
 propup prng rbm vis =
-  do let hprops = map sigmoid $ hact rbm vis
-     hsample prng hprops
+  let hprops = map sigmoid $ hact rbm vis
+  in hsample prng hprops
 
   
 -- sampleH -- sample from p(h|v)
@@ -118,7 +118,7 @@ testRBM =
          v1 = fromList (Z :. nv) [0,1,1] :: VState
          h1act = I.run $ hact rbm v1
          (rh2', h1s') = propup (use rh1) rbm v1
-         (rh2, h1s) = (I.run rh2', h1s')
+         (rh2, h1s) = (I.run rh2', I.run h1s')
      print h1act
      print h1s
 
