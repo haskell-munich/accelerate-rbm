@@ -22,6 +22,9 @@ data RBM = RBM { nv :: Int -- number of visibles units
 -- the activations of the visible units
 type VAct = Array DIM1 Float
 
+-- the probabilities of the hidden units
+type VProbs = Array DIM1 Float
+
 -- the states of the visible units
 type VState = Array DIM1 Bool
 

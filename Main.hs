@@ -27,30 +27,29 @@ initialWeights nv nh =
   in RBM nv nh w v h
 
 
+
+sigmoid :: Exp Float -> Exp Float
+sigmoid act =
+  1 / (1 + exp (-act))
+
+
 -- calculate the activations of the hiddens units given states of the
 -- visible units. All rows of the matrix that correspond to an
 -- activated visible are summed up.
-hact :: RBM -> VState -> Acc HAct
+hact :: RBM -> Acc VState -> Acc HAct
 hact (RBM nv nh w v h) vis =
   A.zipWith (+)
      (use h)
-     (fold (+)
-       0
+     (fold (+) 0
        (transpose
          (A.zipWith rif
            repv
            (use w))))
   where
     repv :: Acc (Array DIM2 Bool)
-    repv = (A.replicate (lift $ Z :. All :. nh) (use vis))
+    repv = (A.replicate (lift $ Z :. All :. nh) vis)
     rif :: Exp Bool -> Exp Float -> Exp Float
     rif v w = v ? (w, 0.0)
-
-
-sigmoid :: Exp Float -> Exp Float
-sigmoid act =
-  1 / (1 + exp (-act))
-
 
 -- sample the state of the hiddens.
 hsample :: Acc PRNG -> Acc HProbs -> (Acc PRNG, Acc HState)
@@ -60,18 +59,47 @@ hsample prng1 hprobs =
       A.zipWith (A.<*) rs hprobs)
 
 -- propup -- p(h|v)
-propup :: Acc PRNG -> RBM -> VState -> (Acc PRNG, Acc HState)
+propup :: Acc PRNG -> RBM -> Acc VState -> (Acc PRNG, Acc HState)
 propup prng rbm vis =
   let hprops = A.map sigmoid $ hact rbm vis
   in hsample prng hprops
 
-  
+
+
+-- calculate the activations of the visible units given states of the
+-- hidden units. All columns of the matrix that correspond to an
+-- activated hidden are summed up.
+vact :: RBM -> Acc HState -> Acc VAct
+vact (RBM nv nh w v h) hid =
+  A.zipWith (+)
+     (use v)
+     (fold (+) 0
+       (A.zipWith rif
+          reph
+          (transpose (use w))))
+  where
+    reph :: Acc (Array DIM2 Bool)
+    reph = (A.replicate (lift $ Z :. nv :. All) hid)
+    rif :: Exp Bool -> Exp Float -> Exp Float
+    rif v w = v ? (w, 0.0)
+
+-- sample the state of the visibles.
+vsample :: Acc PRNG -> Acc VProbs -> (Acc PRNG, Acc VState)
+vsample prng1 vprobs =
+  let (prng2, rs) = randoms prng1
+  in (prng2,
+      A.zipWith (A.<*) rs vprobs)
+
 -- propdown -- p(v|h)
--- sampleV -- sample from p(v|h)
+propdown :: Acc PRNG -> RBM -> Acc HState -> (Acc PRNG, Acc VState)
+propdown prng rbm hid =
+  let vprops = A.map sigmoid $ vact rbm hid
+  in vsample prng vprops
 
 
--- cd1
 
+
+  
 
 type IntR = Int64
 type PRNG = Array DIM1 IntR
@@ -110,15 +138,18 @@ testRandoms =
   
 testRBM =
   do let (nv, nh) = (3, 4)
-     rv <- mkPRNG nv
+     rv1 <- mkPRNG nv
      rh1 <- mkPRNG nh
      let rbm = initialWeights nv nh
          v1 = fromList (Z :. nv) [False, True, True] :: VState
-         h1act = I.run $ hact rbm v1
-         (rh2', h1s') = propup (use rh1) rbm v1
+         h1act = I.run $ hact rbm (use v1)
+         (rh2', h1s') = propup (use rh1) rbm (use v1)
          (rh2, h1s) = (I.run rh2', I.run h1s')
+         (rv2', v2s') = propdown (use rv1) rbm (use h1s)
+         (rv2, v2s) = (I.run rh2', I.run v2s')
      print h1act
      print h1s
+     print v2s
 
 
 
