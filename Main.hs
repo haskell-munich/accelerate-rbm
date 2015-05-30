@@ -64,18 +64,22 @@ propup prng rbm vis =
 -- hidden units. All columns of the matrix that correspond to an
 -- activated hidden are summed up.
 vact :: RBM -> Acc HState -> Acc VAct
-vact (RBM nv nh w v h) hid =
-  A.zipWith (+)
-     (use v)
+vact (RBM nv nh w v h) = act nv nh (transpose $ use w) (use v) (use h) 
+
+act :: Int -> Int -> Acc W -> Acc V -> Acc H -> Acc State -> Acc Act
+act nv nh w v h hid =
+     A.zipWith (+)
+     v 
      (fold (+) 0
        (A.zipWith rif
           reph
-          (transpose (use w))))
+          w))
   where
     reph :: Acc (Array DIM2 Bool)
     reph = (A.replicate (lift $ Z :. nv :. All) hid)
     rif :: Exp Bool -> Exp Float -> Exp Float
     rif v w = v ? (w, 0.0)
+
 
 -- sample the state of the visibles.
 vsample :: Acc PRNG -> Acc VProbs -> (Acc PRNG, Acc VState)

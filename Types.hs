@@ -19,21 +19,25 @@ data RBM = RBM { nv :: Int -- number of visibles units
                , hbias :: H }
            deriving (Show)
 
+type Act = Array DIM1 Float
+type Probs = Array DIM1 Float
+type State = Array DIM1 Bool
+
 -- the activations of the visible units
-type VAct = Array DIM1 Float
+type VAct = Act
 
 -- the probabilities of the hidden units
-type VProbs = Array DIM1 Float
+type VProbs = Probs
 
 -- the states of the visible units
-type VState = Array DIM1 Bool
+type VState = State
 
 
 -- the activations of the hidden units
-type HAct = Array DIM1 Float
+type HAct = Act
 
 -- the probabilities of the hidden units
-type HProbs = Array DIM1 Float
+type HProbs = Probs
 
 -- the states of the hidden units
-type HState = Array DIM1 Bool
+type HState = State
