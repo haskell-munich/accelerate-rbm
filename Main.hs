@@ -48,6 +48,8 @@ propupP rbm vis =
 
 
 
+{- johannes drever WIP
+
 -- calculate the activations of the visible units given states of the
 -- hidden units. All columns of the matrix that correspond to an
 -- activated hidden are summed up.
@@ -73,6 +75,44 @@ act nout w bias inputs =
     reph = (A.replicate (lift $ Z :. nout :. All) inputs)
     rif :: Exp Bool -> Exp Float -> Exp Float
     rif v w = v ? (w, 0.0)
+-}
+
+
+-- calculate the activations of the visible units given states of the
+-- hidden units. All columns of the matrix that correspond to an
+-- activated hidden are summed up.
+vact :: RBM -> Acc HState -> Acc VAct
+vact (RBM nv nh w v h) hid =
+  A.zipWith (+)
+     (use v)
+     (fold (+) 0
+        (transpose
+          (A.zipWith rif
+            reph
+            (transpose (use w)))))
+  where
+    reph :: Acc (Array DIM2 Bool)
+    reph = (A.replicate (lift $ Z :. All :. nv) hid)
+    rif :: Exp Bool -> Exp Float -> Exp Float
+    rif v w = v ? (w, 0.0)
+
+-- calculate the activations of the hiddens units given states of the
+-- visible units. All rows of the matrix that correspond to an
+-- activated visible are summed up.
+hact :: RBM -> Acc VState -> Acc HAct
+hact (RBM nv nh w v h) vis =
+  A.zipWith (+)
+     (use h)
+     (fold (+) 0
+       (transpose
+         (A.zipWith rif
+           repv
+           (use w))))
+  where
+    repv :: Acc (Array DIM2 Bool)
+    repv = (A.replicate (lift $ Z :. All :. nh) vis)
+    rif :: Exp Bool -> Exp Float -> Exp Float
+    rif v w = v ? (w, 0.0)
 
 
 -- sample the state of the visibles.
@@ -85,8 +125,8 @@ vsample prng1 vprobs =
 -- propdown -- p(v|h)
 propdown :: Acc PRNG -> RBM -> Acc HState -> (Acc PRNG, Acc VState)
 propdown prng rbm hid =
-  let vprops = A.map sigmoid $ vact rbm hid
-  in vsample prng vprops
+  let vprobs = A.map sigmoid $ vact rbm hid
+  in vsample prng vprobs
 
 
 data CD1PRNGS =
@@ -108,33 +148,35 @@ cd1 learningRate rn rbm vis1 =
       hid2p = propupP rbm vis2
       (numv, numh) = (nv rbm, nh rbm)
 
-      upd :: Exp Float -> Exp Float -> Exp Float
-      upd w d = w + constant learningRate * d
-      
-      updatedWeights =
-        A.zipWith upd (use $ weights rbm)
-          (A.zipWith (-)
-              (d_data (use vis1) hid1)
-              (d_recon vis2 hid2p))
-
       -- find visibles and hiddens that are both active
-      d_data :: Acc VState -> Acc HState -> Acc W
-      d_data v h =
+      d_data :: Acc W
+      d_data =
         A.zipWith mulBB
-          (A.replicate (lift $ Z :. All :. numh) v)
-          (A.replicate (lift $ Z :. numv :. All) h)
+          (A.replicate (lift $ Z :. All :. numh) (use vis1))
+          (A.replicate (lift $ Z :. numv :. All) hid1)
       mulBB :: Exp Bool -> Exp Bool -> Exp Float
       mulBB a b = a&&*b ? (1.0, 0.0)
 
       -- find visibles and hiddens that are both active
-      d_recon :: Acc VState -> Acc HProbs -> Acc W
-      d_recon v h =
-        A.zipWith mulBP
-          (A.replicate (lift $ Z :. All :. numh) v)
-          (A.replicate (lift $ Z :. numv :. All) h)
 
+
+      dr1 = (A.replicate (lift $ Z :. All :. numh) vis2)
+      dr2 = (A.replicate (lift $ Z :. numv :. All) hid2p)
+        
+      d_recon :: Acc W
+      d_recon =
+        A.zipWith mulBP
+          (A.replicate (lift $ Z :. All :. numh) vis2)
+          (A.replicate (lift $ Z :. numv :. All) hid2p)
       mulBP :: Exp Bool -> Exp Float -> Exp Float
       mulBP a b = a ? (b, 0.0)
+
+      delta = A.zipWith (-) d_data d_recon
+
+      upd :: Exp Float -> Exp Float -> Exp Float
+      upd w d = w + constant learningRate * d
+
+      updatedWeights = A.zipWith upd (use $ weights rbm) delta
 
       updatedVbias =
         A.zipWith (+) (use $ vbias rbm)
@@ -222,7 +264,7 @@ testRBM =
      print v2s
 
 testCD1 =
-  do let (nv, nh) = (5,7)
+  do let (nv, nh) = (5, 3)
      let rbm1 = initialWeights nv nh
      rn1 <- mkCD1PRNGS rbm1
      let v1 = fromList (Z :. nv)
@@ -233,27 +275,53 @@ testCD1 =
 
 testOdysseyLetters =
   do let ngram = 3
-     (nchars, chdat, idat) <- Odyssey.load ngram
+     (chars, chdat, idat) <- Odyssey.load ngram
+     testOdysseyLettersRun ngram chars idat
+
+testOdysseyLettersRun :: Int -> [Char] -> [[Int]] -> IO ()
+testOdysseyLettersRun ngram chars idat =
+  do
      -- mapM_ print (P.zip chdat idat)
-     let (nv, nh) = (ngram*nchars, 50)
+     print (nv, nh)
      let rbm1 = initialWeights nv nh
      rn1 <- mkCD1PRNGS rbm1
-     learn nchars nv rbm1 rn1 idat
+     learn 0 rbm1 rn1 idat
   where
+    nchars = P.length chars
+    (nv, nh) = (ngram*nchars, 50)
     encodeData :: Int -> Int -> [Int] -> Array DIM1 Bool
     encodeData nchars nv dat =
       let onehot d = [ if i == d then True else False
-                     | i <- [0..nchars]]
+                     | i <- [0..nchars-1]]
       in fromList (Z :. nv) (P.concat $ P.map onehot dat) :: VState
-    learn :: Int -> Int -> RBM -> CD1PRNGS -> [[Int]] -> IO ()
-    learn nchars nv rbm1 rn1 (dat:idat) =
+    learn :: Int -> RBM -> CD1PRNGS -> [[Int]] -> IO ()
+    learn rep rbm1 rn1 (dat:idat) =
       do let v1 = encodeData nchars nv dat
              (rn2, rbm2, recerr) = cd1 0.01 rn1 rbm1 v1
          print recerr
-         learn nchars nv rbm2 rn2 idat
+         if rep `mod` 10 == 9
+           then reportHiddens ngram chars rbm1
+           else return ()
+         learn (succ rep) rbm2 rn2 idat
+
+
+reportHiddens ngram chars rbm =
+  sequence_ [ reportHidden h | h <- [0 .. nh rbm - 1]]
+  where
+    reportHidden h =
+      do print("hidden", h)
+         mapM_ print
+           [ (g, ch, w)
+           | g <- [0..ngram-1]
+           , (ch, chi) <- P.zip chars [0..]
+           , let w = indexArray (weights rbm)
+                     (Z :. (nchars*g + chi) :. h)
+           , w > 0.0 ]
+    nchars = P.length chars
+
 
 main =
-  do -- testRandoms
+  do testRandoms
      -- testRBM
      -- testCD1
-     testOdysseyLetters
+     -- testOdysseyLetters

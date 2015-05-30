@@ -8,14 +8,14 @@ chars = "_" ++ ['a' .. 'z'] ++ " .,;:-"
 
 charsMap = M.fromList (zip chars [0..])
 
-load :: Int -> IO (Int, [[Char]], [[Int]])
+load :: Int -> IO ([Char], [[Char]], [[Int]])
 load len =
   do content <- readFile "pg1727-part.txt"
      let chdata =
            L.filter minlen $
            L.map (take len) $
            L.tails content
-     return (length chars,
+     return (chars,
              chdata,
              L.map (L.map encode) chdata)
   where
