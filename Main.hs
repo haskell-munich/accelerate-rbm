@@ -6,11 +6,13 @@ import Data.Array.Accelerate as A
 import System.Random(getStdRandom, randomR)
 import Control.Monad(replicateM)
 
-import Data.Bits(Bits((.&.)))
+import Data.Bits(Bits((.&.)), xor)
    
 import Data.Array.Accelerate.Interpreter as I
 
 import Types
+
+import Odyssey
 
 
 initialWeights :: Int -> Int -> RBM
@@ -97,7 +99,9 @@ mkCD1PRNGS rbm =
      rh <- mkPRNG numh
      return $ CD1PRNGS rv rh
 
-cd1 :: Float -> CD1PRNGS -> RBM -> VState -> (CD1PRNGS, RBM)
+-- update the weights according to CD-1
+cd1 :: Float -> CD1PRNGS -> RBM -> VState
+       -> (CD1PRNGS, RBM, Scalar Float)
 cd1 learningRate rn rbm vis1 =
   let (rnh1, hid1) = propup (use $ hprng rn) rbm (use vis1)
       (rnv1, vis2) = propdown (use $ vprng rn) rbm hid1
@@ -131,12 +135,20 @@ cd1 learningRate rn rbm vis1 =
 
       mulBP :: Exp Bool -> Exp Float -> Exp Float
       mulBP a b = a ? (b, 0.0)
+
+      -- the reconstruction error
+      recerr = A.fold (+) 0 (A.zipWith bindiff (use vis1) vis2)
+
+      bindiff :: Exp Bool -> Exp Bool -> Exp Float
+      bindiff a b = a /=* b ? (1, 0)
       
       
   in (CD1PRNGS (I.run rnv1) (I.run rnh1),
       rbm { weights = I.run updatedWeights
             {-vbias = undefined,-}
-            {-hbias = undefined-} })
+            {-hbias = undefined-} },
+      I.run recerr)
+     
 
   
 
@@ -196,11 +208,33 @@ testCD1 =
      rn1 <- mkCD1PRNGS rbm1
      let v1 = fromList (Z :. nv)
               [False, True, False, True, True] :: VState
-     let (rn2, rbm2) = cd1 0.01 rn1 rbm1 v1
+     let (rn2, rbm2, recerr) = cd1 0.01 rn1 rbm1 v1
      print (rbm1)
      print (rbm2)
+
+testOdysseyLetters =
+  do let ngram = 3
+     (nchars, chdat, idat) <- Odyssey.load ngram
+     -- mapM_ print (P.zip chdat idat)
+     let (nv, nh) = (ngram*nchars, 50)
+     let rbm1 = initialWeights nv nh
+     rn1 <- mkCD1PRNGS rbm1
+     learn nchars nv rbm1 rn1 idat
+  where
+    encodeData :: Int -> Int -> [Int] -> Array DIM1 Bool
+    encodeData nchars nv dat =
+      let onehot d = [ if i == d then True else False
+                     | i <- [0..nchars]]
+      in fromList (Z :. nv) (P.concat $ P.map onehot dat) :: VState
+    learn :: Int -> Int -> RBM -> CD1PRNGS -> [[Int]] -> IO ()
+    learn nchars nv rbm1 rn1 (dat:idat) =
+      do let v1 = encodeData nchars nv dat
+             (rn2, rbm2, recerr) = cd1 0.01 rn1 rbm1 v1
+         print recerr
+         learn nchars nv rbm2 rn2 idat
 
 main =
   do -- testRandoms
      -- testRBM
-     testCD1
+     -- testCD1
+     testOdysseyLetters
