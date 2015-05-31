@@ -13,11 +13,11 @@ import Types
 import Odyssey
 
 
-initialWeights :: Int -> Int -> Int -> RBM
-initialWeights nv nh minibatchSize =
+initialWeights :: Int -> Int -> Int -> Float -> Float -> RBM
+initialWeights nv nh minibatchSize initialvbias initialhbias =
   let w = I.run $ fill (constant $ Z :. nv :. nh) 0.0 :: W
-      v = I.run $ fill (constant $ Z :. nv) 0.0 :: V
-      h = I.run $ fill (constant $ Z :. nh) 0.0 :: H
+      v = I.run $ fill (constant $ Z :. nv) (constant initialvbias) :: V
+      h = I.run $ fill (constant $ Z :. nh) (constant initialhbias) :: H
   in RBM nv nh minibatchSize w v h
 
 
@@ -294,7 +294,7 @@ testRBM =
          minibatchSize = 2
      rv1 <- mkPRNG (nv*minibatchSize)
      rh1 <- mkPRNG (nh*minibatchSize)
-     let rbm = initialWeights nv nh minibatchSize
+     let rbm = initialWeights nv nh minibatchSize 0.0 0.0
          v1 = fromList (Z :. minibatchSize :. nv)
               [False, True, True,
                False, True, False] :: VState
@@ -309,7 +309,7 @@ testRBM =
 
 testCD1 =
   do let (nv, nh, minibatchSize) = (5, 3, 2)
-     let rbm1 = initialWeights nv nh minibatchSize
+     let rbm1 = initialWeights nv nh minibatchSize 0.0 0.0
      rn1 <- mkCD1PRNGS rbm1
      let v1 = fromList (Z :. minibatchSize :. nv)
               [False, True, False, True, True,
@@ -329,13 +329,13 @@ testOdysseyLettersRun ngram chars idat =
   do
      -- mapM_ print (P.zip chdat idat)
      print (nv, nh)
-     let rbm1 = initialWeights nv nh minibatchSize
+     let rbm1 = initialWeights nv nh minibatchSize (-3.3) (-1.0)
      rn1 <- mkCD1PRNGS rbm1
      learn 0 rbm1 rn1 idat
   where
     minibatchSize = 10
     nchars = P.length chars
-    (nv, nh) = (ngram*nchars, 50)
+    (nv, nh) = (ngram*nchars, 200)
     encodeData :: [[Int]] -> Array DIM2 Bool
     encodeData dat =
       let onehot d = [ if i == d then True else False
@@ -344,9 +344,12 @@ testOdysseyLettersRun ngram chars idat =
          (P.concat $ P.concat $ P.map (P.map onehot) dat) :: VState
     learn :: Int -> RBM -> CD1PRNGS -> [[Int]] -> IO ()
     learn rep rbm1 rn1 idat1 =
-      do let (dat,idat2) = L.splitAt minibatchSize idat1
+      do
+         -- rnNew <- mkCD1PRNGS rbm1 -- testing: new PRNG each time
+
+         let (dat,idat2) = L.splitAt minibatchSize idat1
              v1 = encodeData dat
-             (rn2, rbm2, recerr) = cd1 0.01 rn1 rbm1 v1
+             (rn2, rbm2, recerr) = cd1 0.1 rn1{-rnNew-} rbm1 v1
          print recerr
          if rep `mod` 10 == 9
            then reportHiddens ngram chars rbm1
