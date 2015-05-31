@@ -1,7 +1,7 @@
 
 module Types where
 
-import Data.Array.Accelerate(Array, DIM1, DIM2)
+import Data.Array.Accelerate(Array, DIM1, DIM2, DIM3)
 
 -- the weight matrix
 type W = Array DIM2 Float
@@ -15,14 +15,16 @@ type H = Bias
 
 data RBM = RBM { nv :: Int -- number of visibles units
                , nh :: Int -- number of hidden units
+               , minibatchSize :: Int
                , weights :: W
                , vbias :: V
                , hbias :: H }
            deriving (Show)
 
-type Act = Array DIM1 Float
-type Probs = Array DIM1 Float
-type State = Array DIM1 Bool
+
+type Act = Array DIM2 Float
+type Probs = Array DIM2 Float
+type State = Array DIM2 Bool
 
 -- the activations of the visible units
 type VAct = Act

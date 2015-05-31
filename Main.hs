@@ -1,22 +1,24 @@
+{-# LANGUAGE TypeOperators #-}
 module Main where
 
 import Prelude as P
 import Data.Array.Accelerate as A
+import Data.Array.Accelerate.Interpreter as I
 import System.Random(getStdRandom, randomR)
 import Control.Monad(replicateM)
 import Data.Bits(Bits((.&.)), xor)
-import Data.Array.Accelerate.Interpreter as I
+import qualified Data.List as L
 import qualified Data.Map as M
 import Types
 import Odyssey
 
 
-initialWeights :: Int -> Int -> RBM
-initialWeights nv nh =
+initialWeights :: Int -> Int -> Int -> RBM
+initialWeights nv nh minibatchSize =
   let w = I.run $ fill (constant $ Z :. nv :. nh) 0.0 :: W
       v = I.run $ fill (constant $ Z :. nv) 0.0 :: V
       h = I.run $ fill (constant $ Z :. nh) 0.0 :: H
-  in RBM nv nh w v h
+  in RBM nv nh minibatchSize w v h
 
 
 
@@ -30,7 +32,9 @@ hsample :: Acc PRNG -> Acc HProbs -> (Acc PRNG, Acc HState)
 hsample prng1 hprobs =
   let (prng2, rs) = randoms prng1
   in (prng2,
-      A.zipWith (A.<*) rs hprobs)
+      A.zipWith (A.<*)
+        (reshape (shape hprobs) rs)
+        hprobs)
 
 -- propup -- p(h|v), sampled
 propup :: Acc PRNG -> RBM -> Acc VState -> (Acc PRNG, Acc HState)
@@ -78,35 +82,56 @@ act nout w bias inputs =
 -- hidden units. All columns of the matrix that correspond to an
 -- activated hidden are summed up.
 vact :: RBM -> Acc HState -> Acc VAct
-vact (RBM nv nh w v h) hid =
+vact (RBM nv nh minibatchSize w v h) hid =
   A.zipWith (+)
-     (use v)
+     (A.replicate (lift $ Z:.minibatchSize:.All)
+       (use v))
      (fold (+) 0
-        (transpose
+        (transpose132
           (A.zipWith rif
             reph
-            (transpose (use w)))))
+            (A.replicate (lift $ Z:.minibatchSize:.All:.All)
+                         (transpose (use w))))))
   where
-    reph :: Acc (Array DIM2 Bool)
-    reph = (A.replicate (lift $ Z :. All :. nv) hid)
+    reph :: Acc (Array DIM3 Bool)
+    reph = (A.replicate (lift $ Z :. All :. All :. nv) hid)
     rif :: Exp Bool -> Exp Float -> Exp Float
     rif v w = v ? (w, 0.0)
+
+
+transpose132 :: Elt e => Acc (Array DIM3 e) -> Acc (Array DIM3 e)
+transpose132 mat =
+  let swap = lift1 $ \(Z:.z:.x:.y) -> Z:.z:.y:.x
+                                   :: Z:.Exp Int:.Exp Int:.Exp Int
+  in  backpermute (swap $ shape mat) swap mat
+
+
+transpose231 :: Elt e => Acc (Array DIM3 e) -> Acc (Array DIM3 e)
+transpose231 mat =
+  let swap = lift1 $ \(Z:.x:.y:.z) -> Z:.z:.x:.y
+                                   :: Z:.Exp Int:.Exp Int:.Exp Int
+      tr = lift1 $ \(Z:.z:.x:.y) -> Z:.x:.y:.z
+                                   :: Z:.Exp Int:.Exp Int:.Exp Int
+  in  backpermute (tr $ shape mat) swap mat
+
 
 -- calculate the activations of the hiddens units given states of the
 -- visible units. All rows of the matrix that correspond to an
 -- activated visible are summed up.
 hact :: RBM -> Acc VState -> Acc HAct
-hact (RBM nv nh w v h) vis =
+hact (RBM nv nh minibatchSize w v h) vis =
   A.zipWith (+)
-     (use h)
+     (A.replicate (lift $ Z:.minibatchSize:.All)
+       (use h))
      (fold (+) 0
-       (transpose
+       (transpose132
          (A.zipWith rif
            repv
-           (use w))))
+           (A.replicate (lift $ Z:.minibatchSize:.All:.All)
+                        (use w)))))
   where
-    repv :: Acc (Array DIM2 Bool)
-    repv = (A.replicate (lift $ Z :. All :. nh) vis)
+    repv :: Acc (Array DIM3 Bool)
+    repv = (A.replicate (lift $ Z :. All :. All :. nh) vis)
     rif :: Exp Bool -> Exp Float -> Exp Float
     rif v w = v ? (w, 0.0)
 
@@ -116,7 +141,8 @@ vsample :: Acc PRNG -> Acc VProbs -> (Acc PRNG, Acc VState)
 vsample prng1 vprobs =
   let (prng2, rs) = randoms prng1
   in (prng2,
-      A.zipWith (A.<*) rs vprobs)
+      A.zipWith (A.<*) (reshape (shape vprobs) rs)
+                       vprobs)
 
 -- propdown -- p(v|h)
 propdown :: Acc PRNG -> RBM -> Acc HState -> (Acc PRNG, Acc VState)
@@ -130,9 +156,9 @@ data CD1PRNGS =
              hprng :: PRNG }
 
 mkCD1PRNGS rbm =
-  do let (numv, numh) = (nv rbm, nh rbm)
-     rv <- mkPRNG numv
-     rh <- mkPRNG numh
+  do let (numv, numh, mb) = (nv rbm, nh rbm, minibatchSize rbm)
+     rv <- mkPRNG (numv*mb)
+     rh <- mkPRNG (numh*mb)
      return $ CD1PRNGS rv rh
 
 -- update the weights according to CD-1
@@ -142,32 +168,30 @@ cd1 learningRate rn rbm vis1 =
   let (rnh1, hid1) = propup (use $ hprng rn) rbm (use vis1)
       (rnv1, vis2) = propdown (use $ vprng rn) rbm hid1
       hid2p = propupP rbm vis2
-      (numv, numh) = (nv rbm, nh rbm)
+      (numv, numh, mb) = (nv rbm, nh rbm, minibatchSize rbm)
 
       -- find visibles and hiddens that are both active
-      d_data :: Acc W
+      d_data :: Acc (Array DIM3 Float)
       d_data =
         A.zipWith mulBB
-          (A.replicate (lift $ Z :. All :. numh) (use vis1))
-          (A.replicate (lift $ Z :. numv :. All) hid1)
+          (A.replicate (lift $ Z :. All :. All :. numh) (use vis1))
+          (A.replicate (lift $ Z :. All :. numv :. All) hid1)
       mulBB :: Exp Bool -> Exp Bool -> Exp Float
       mulBB a b = a&&*b ? (1.0, 0.0)
 
       -- find visibles and hiddens that are both active
 
 
-      dr1 = (A.replicate (lift $ Z :. All :. numh) vis2)
-      dr2 = (A.replicate (lift $ Z :. numv :. All) hid2p)
-        
-      d_recon :: Acc W
+      d_recon :: Acc (Array DIM3 Float)
       d_recon =
         A.zipWith mulBP
-          (A.replicate (lift $ Z :. All :. numh) vis2)
-          (A.replicate (lift $ Z :. numv :. All) hid2p)
+          (A.replicate (lift $ Z :. All :. All :. numh) vis2)
+          (A.replicate (lift $ Z :. All :. numv :. All) hid2p)
       mulBP :: Exp Bool -> Exp Float -> Exp Float
       mulBP a b = a ? (b, 0.0)
 
-      delta = A.zipWith (-) d_data d_recon
+      deltamb = A.zipWith (-) d_data d_recon
+      delta = A.fold (+) 0 (transpose231 deltamb)
 
       upd :: Exp Float -> Exp Float -> Exp Float
       upd w d = w + constant learningRate * d
@@ -176,16 +200,20 @@ cd1 learningRate rn rbm vis1 =
 
       updatedVbias =
         A.zipWith (+) (use $ vbias rbm)
-          (A.map mulLearningRate
-             (A.zipWith diffbb (use vis1) vis2))
+          (A.fold (+) 0
+             (transpose
+                (A.map mulLearningRate
+                   (A.zipWith diffbb (use vis1) vis2))))
 
       diffbb :: Exp Bool -> Exp Bool -> Exp Float
       diffbb a b = A.fromIntegral (boolToInt a - boolToInt b)
 
       updatedHbias =
         A.zipWith (+) (use $ hbias rbm)
-          (A.map mulLearningRate
-             (A.zipWith diffbf hid1 hid2p))
+          (A.fold (+) 0
+             (transpose
+                (A.map mulLearningRate
+                   (A.zipWith diffbf hid1 hid2p))))
 
       diffbf :: Exp Bool -> Exp Float -> Exp Float
       diffbf a b = A.fromIntegral (boolToInt a) - b
@@ -195,7 +223,9 @@ cd1 learningRate rn rbm vis1 =
 
 
       -- the reconstruction error
-      recerr = A.fold (+) 0 (A.zipWith bindiff (use vis1) vis2)
+      recerr = A.fold (+) 0
+                 (A.fold (+) 0
+                    (A.zipWith bindiff (use vis1) vis2))
 
       bindiff :: Exp Bool -> Exp Bool -> Exp Float
       bindiff a b = a /=* b ? (1, 0)
@@ -261,10 +291,13 @@ countRandoms =
 
 testRBM =
   do let (nv, nh) = (3, 4)
-     rv1 <- mkPRNG nv
-     rh1 <- mkPRNG nh
-     let rbm = initialWeights nv nh
-         v1 = fromList (Z :. nv) [False, True, True] :: VState
+         minibatchSize = 2
+     rv1 <- mkPRNG (nv*minibatchSize)
+     rh1 <- mkPRNG (nh*minibatchSize)
+     let rbm = initialWeights nv nh minibatchSize
+         v1 = fromList (Z :. minibatchSize :. nv)
+              [False, True, True,
+               False, True, False] :: VState
          h1act = I.run $ hact rbm (use v1)
          (rh2', h1s') = propup (use rh1) rbm (use v1)
          (rh2, h1s) = (I.run rh2', I.run h1s')
@@ -275,14 +308,16 @@ testRBM =
      print v2s
 
 testCD1 =
-  do let (nv, nh) = (5, 3)
-     let rbm1 = initialWeights nv nh
+  do let (nv, nh, minibatchSize) = (5, 3, 2)
+     let rbm1 = initialWeights nv nh minibatchSize
      rn1 <- mkCD1PRNGS rbm1
-     let v1 = fromList (Z :. nv)
-              [False, True, False, True, True] :: VState
+     let v1 = fromList (Z :. minibatchSize :. nv)
+              [False, True, False, True, True,
+               False, True, False, True, True] :: VState
      let (rn2, rbm2, recerr) = cd1 0.01 rn1 rbm1 v1
-     print (rbm1)
-     print (rbm2)
+     print rbm1
+     print rbm2
+
 
 testOdysseyLetters =
   do let ngram = 3
@@ -294,26 +329,29 @@ testOdysseyLettersRun ngram chars idat =
   do
      -- mapM_ print (P.zip chdat idat)
      print (nv, nh)
-     let rbm1 = initialWeights nv nh
+     let rbm1 = initialWeights nv nh minibatchSize
      rn1 <- mkCD1PRNGS rbm1
      learn 0 rbm1 rn1 idat
   where
+    minibatchSize = 10
     nchars = P.length chars
     (nv, nh) = (ngram*nchars, 50)
-    encodeData :: Int -> Int -> [Int] -> Array DIM1 Bool
-    encodeData nchars nv dat =
+    encodeData :: [[Int]] -> Array DIM2 Bool
+    encodeData dat =
       let onehot d = [ if i == d then True else False
                      | i <- [0..nchars-1]]
-      in fromList (Z :. nv) (P.concat $ P.map onehot dat) :: VState
+      in fromList (Z :. minibatchSize :. nv)
+         (P.concat $ P.concat $ P.map (P.map onehot) dat) :: VState
     learn :: Int -> RBM -> CD1PRNGS -> [[Int]] -> IO ()
-    learn rep rbm1 rn1 (dat:idat) =
-      do let v1 = encodeData nchars nv dat
+    learn rep rbm1 rn1 idat1 =
+      do let (dat,idat2) = L.splitAt minibatchSize idat1
+             v1 = encodeData dat
              (rn2, rbm2, recerr) = cd1 0.01 rn1 rbm1 v1
          print recerr
          if rep `mod` 10 == 9
            then reportHiddens ngram chars rbm1
            else return ()
-         learn (succ rep) rbm2 rn2 idat
+         learn (succ rep) rbm2 rn2 idat2
 
 
 reportHiddens ngram chars rbm =
@@ -333,7 +371,7 @@ reportHiddens ngram chars rbm =
 
 main =
   do -- testRandoms
-     countRandoms
+     -- countRandoms
      -- testRBM
      -- testCD1
-     -- testOdysseyLetters
+     testOdysseyLetters
